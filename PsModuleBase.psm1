@@ -20,9 +20,10 @@ enum InstallScope {
   LocalMachine # i.e: AllUsers
   CurrentUser
 }
-enum ModuleDataAttribute {
-  ManifestKey
-  FileContent
+
+enum ModuleItemType {
+  File
+  Directory
 }
 
 class SearchParams {
@@ -34,26 +35,39 @@ class SearchParams {
   [int]$MaxDepth = 10
 }
 
-class ModuleFile {
-  [ValidateNotNullOrEmpty()][FileInfo]$value
-  ModuleFile([string]$Name, [string]$value) {
-    $this.Name = $Name; $this.value = [FileInfo]::new($value)
+class ModuleItem {
+  [ValidateNotNullOrWhiteSpace()][string]$Name
+  [string[]]$Attributes = @()
+  [FileSystemInfo]$value
+  static [ReadOnlyCollection[string]]$DefaultNames = [ModuleItem]::GetDefaultNames()
+
+  ModuleItem([string]$name, $value) {
+    $this.Name = $name; $this.value = $value
+    $this.psobject.properties.add([PsScriptProperty]::new('Exists', { return Test-Path -Path $this.value.FullName -ea Ignore }, { throw [SetValueException]::new('Exists is read-only') }))
+    if ($name -in [ModuleItem]::DefaultNames) {
+      $this.Attributes += "ManifestKey"
+    }
   }
-  ModuleFile([string]$Name, [FileInfo]$value) {
-    $this.Name = $Name
-    $this.value = $value
+  static [ReadOnlyCollection[string]] GetDefaultNames() {
+    # https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/new-modulemanifest#example-5-getting-module-information
+    return New-ReadOnlyCollection -list ((Get-Module PsModuleBase -Verbose:$false).PsObject.Properties.Name + 'ModuleVersion')
   }
+  [void] hidden _init_([ModuleItemType]$type) {
+    if ($type -eq "File") { $this.Attributes += "FileContent" }
+    $this.psobject.properties.add([PsScriptProperty]::new('Type', [scriptblock]::Create("return [ModuleItemType]::$Type"), [scriptblock]::Create("throw [SetValueException]::new('$Type is read-only')") ))
+  }
+  [string] ToString() { return $this.Name }
 }
-class ModuleFolder {
-  [ValidateNotNullOrEmpty()][IO.DirectoryInfo]$value
-  ModuleFolder([string]$Name, [string]$value) {
-    $this.Name = $Name; $this.value = [IO.DirectoryInfo]::new($value)
-  }
-  ModuleFolder([string]$Name, [IO.DirectoryInfo]$value) {
-    $this.Name = $Name
-    $this.value = $value
-  }
+class ModuleFile : ModuleItem {
+  ModuleFile([string]$Name, [string]$value) : base($Name, [FileInfo]::new($value)) { $this._init_("File") }
+  ModuleFile([string]$Name, [FileInfo]$value) : base($name, $value) { $this._init_("File") }
 }
+
+class ModuleFolder: ModuleItem {
+  ModuleFolder([string]$Name, [string]$value): base ($name, [DirectoryInfo]::new($value)) { $this._init_("Directory") }
+  ModuleFolder([string]$Name, [DirectoryInfo]$value) : base($name, $value) { $this._init_("Directory") }
+}
+
 class PSGalleryItem {
   [string] $Name
   [version] $Version
@@ -189,7 +203,7 @@ class LocalPsModule {
   }
   static [LocalPsModule] Find([string]$Name, [string]$scope, [version]$version) {
     $Module = $null; [ValidateNotNullOrWhiteSpace()][string]$Name = $Name
-    $PsModule_Paths = $([PsModuleData]::GetModulePaths($(if ([string]::IsNullOrWhiteSpace($scope)) { "LocalMachine" }else { $scope })).ForEach({ [IO.DirectoryInfo]::New("$_") }).Where({ $_.Exists })).GetDirectories().Where({ $_.Name -eq $Name });
+    $PsModule_Paths = $([LocalPsModule]::GetModulePaths($(if ([string]::IsNullOrWhiteSpace($scope)) { "LocalMachine" }else { $scope })).ForEach({ [IO.DirectoryInfo]::New("$_") }).Where({ $_.Exists })).GetDirectories().Where({ $_.Name -eq $Name });
     if ($PsModule_Paths.count -gt 0) {
       $Get_versionDir = [scriptblock]::Create('param([IO.DirectoryInfo[]]$direcrory) return ($direcrory | ForEach-Object { $_.GetDirectories() | Where-Object { $_.Name -as [version] -is [version] } })')
       $has_versionDir = $Get_versionDir.Invoke($PsModule_Paths).count -gt 0
@@ -212,179 +226,27 @@ class LocalPsModule {
     }
     return $Module
   }
+  static [string[]] GetModulePaths() {
+    return [LocalPsModule]::GetModulePaths($null)
+  }
+  static [string[]] GetModulePaths([string]$iscope) {
+    [string[]]$_Module_Paths = [Environment]::GetEnvironmentVariable('PSModulePath').Split([IO.Path]::PathSeparator)
+    if ([string]::IsNullOrWhiteSpace($iscope)) { return $_Module_Paths }; [InstallScope]$iscope = $iscope
+    if (!(Get-Variable -Name IsWindows -ErrorAction Ignore) -or $(Get-Variable IsWindows -ValueOnly)) {
+      $psv = Get-Variable PSVersionTable -ValueOnly
+      $allUsers_path = Join-Path -Path $env:ProgramFiles -ChildPath $(if ($psv.ContainsKey('PSEdition') -and $psv.PSEdition -eq 'Core') { 'PowerShell' } else { 'WindowsPowerShell' })
+      if ("$iScope" -eq 'CurrentUser') { $_Module_Paths = $_Module_Paths.Where({ $_ -notlike "*$($allUsers_path | Split-Path)*" -and $_ -notlike "*$env:SystemRoot*" }) }
+    } else {
+      $allUsers_path = Split-Path -Path ([Platform]::SelectProductNameForDirectory('SHARED_MODULES')) -Parent
+      if ("$iScope" -eq 'CurrentUser') { $_Module_Paths = $_Module_Paths.Where({ $_ -notlike "*$($allUsers_path | Split-Path)*" -and $_ -notlike "*/var/lib/*" }) }
+    }
+    return $_Module_Paths
+  }
   [void] Delete() {
     Remove-Item $this.Path -Recurse -Force -ErrorAction Ignore
   }
 }
 
-class PsModuleData : Collection[Tuple[string, Type, Object]] {
-  [ModuleFile[]]$Files;
-  [ModuleFolder[]]$Folders;
-  [ModuleFile[]]$Functions;
-  [ModuleDataAttribute[]]$Attributes = @()
-  static hidden [string] $LICENSE_TXT
-  static hidden [string[]] $configuration_values = $(Get-Module PsModuleBase -Verbose:$false).PsObject.Properties.Name + 'ModuleVersion'
-  # $mName, $mroot
-
-  PsModuleData([hashtable]$files) {}
-
-  [void] SetModuleFile([string]$keyName, [string]$Path) {}
-  # PsModuleData([array]$k_v_t) {
-  #   if ($k_v_t.Count -eq 3) {
-  #     [void][PsModuleData]::From([string]$k_v_t[0], $k_v_t[1], [Type]$k_v_t[2], [ref]$this)
-  #   } elseif ($k_v_t.Count -eq 2) {
-  #     [void][PsModuleData]::From([string]$k_v_t[0], $k_v_t[1], [ref]$this)
-  #   } else {
-  #     throw [TypeInitializationException]::new("PsModuleData", [ArgumentException]::new("New-Object PsModuleData([array]`$k_v_t) failed. k_v_t.count should be 3 or 2.", "key_value_type array"))
-  #   }
-  # }
-  # PsModuleData([String]$Key, $Value) {
-  #   [void][PsModuleData]::From($Key, $Value, $Value.GetType(), @(), [ref]$this)
-  # }
-  # PsModuleData([String]$Key, $Value, [Type]$Type) {
-  #   [void][PsModuleData]::From($Key, $Value, $Type, @(), [ref]$this)
-  # }
-  # PsModuleData([String]$Key, $Value, [ModuleFile[]]$files) {
-  #   [void][PsModuleData]::From($Key, $Value, $Value.GetType(), $files, [ref]$this)
-  # }
-  # static [Collection[PsModuleData]] Create([hashtable]$data, [ModuleFile[]]$Files) {
-  #   $mdta = [Collection[PsModuleData]]::new()
-  #   $arry = @(); $data.Keys.ForEach({ $arry += [PsModuleData]::new($_, $data[$_], $Files) })
-  #   $arry.ForEach({ [void]$mdta.Add($_) })
-  #   return $mdta
-  # }
-  # static [Collection[PsModuleData]] Create([string]$Name, [string]$Path, [List[ModuleFile]]$Files) {
-  #   return [PsModuleData]::Create($name, [PsModuleBase]::ReadModuledata($Name), $Path, $Files)
-  # }
-  # static [Collection[PsModuleData]] Create([string]$Name, [hashtable]$data, [string]$Path, [List[ModuleFile]]$Files) {
-  #   $_PSVersion = $data["PowerShellVersion"]; [ValidateScript({ $_ -ge [version]"2.0" -and $_ -le [version]"7.0" })]$_PSVersion = $_PSVersion
-  #   return [PsModuleData]::Create($data, $Files)
-  # }
-  # static hidden [PsModuleData] From([String]$Key, $Value, [ref]$o) { return [PsModuleData]::From($Key, $Value, $Value.GetType(), @(), [ref]$o) }
-  # static hidden [PsModuleData] From([String]$Key, $Value, [Type]$Type, [ModuleFile[]]$Files, [ref]$o) {
-  #   $o.Value.Key = $Key; $o.Value.Type = $Type; $o.Value.Value = $Value -as $Type
-  #   if ($Files.Name.Contains($Key)) { $o.Value.Attributes += "FileContent" }
-  #   # https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/new-modulemanifest#example-5-getting-module-information
-  #   if ($Key -in [PsModuleData]::configuration_values) { $o.Value.Attributes += "ManifestKey" }
-  #   return $o.Value
-  # }
-  [void] Add([string]$key, [Type]$type, [Object]$value) {
-    [ValidateNotNullOrWhiteSpace()]$key = $key; [ValidateNotNull()]$type = $type
-    $this.Add([System.Tuple]::New($key, $type, $value))
-  }
-  [void] Set($Value) { $this.Value = $Value }
-  [void] Format() {
-    if ($this.Type.Name -in ('String', 'ScriptBlock')) {
-      try {
-        # Write-Host "FORMATTING: << $($this.Key) : $($this.Type.Name)" -f Blue -NoNewline
-        $this.Value = Invoke-Formatter -ScriptDefinition $this.Value.ToString() -Verbose:$false
-      } catch {
-        # Write-Host " Attempt to format the file line by line. " -f Magenta -nonewline
-        $content = $this.Value.ToString()
-        $formattedLines = @()
-        foreach ($line in $content) {
-          try {
-            $formattedLine = Invoke-Formatter -ScriptDefinition $line -Verbose:$false
-            $formattedLines += $formattedLine
-          } catch {
-            # If formatting fails, keep the original line
-            $formattedLines += $line
-          }
-        }
-        $_value = [string]::Join([Environment]::NewLine, $formattedLines)
-        if ($this.Type.Name -eq 'String') {
-          $this.Value = $_value
-        } elseif ($this.Type.Name -eq 'ScriptBlock') {
-          $this.Value = [scriptblock]::Create("$_value")
-        }
-      }
-      # Write-Host " done $($this.Key) >>" -f Green
-    }
-  }
-  static [string] GetAuthorName([string]$ModuleName) {
-    return Get-AuthorName -n $ModuleName
-  }
-  static [string] GetAuthorEmail([string]$ModuleName) {
-    return Get-AuthorEmail -n $ModuleName
-  }
-  static [string] GetModuleReadmeText([string]$ModuleName) {
-    return Get-ModuleReadmeText -n $ModuleName
-  }
-  static [string] GetModuleLicenseText([string]$ModuleName) {
-    return Get-ModuleLicenseText -n $ModuleName
-  }
-  static [string] GetModuleCICDyaml([string]$ModuleName) {
-    return Get-ModuleCICDyaml -n $ModuleName
-  }
-  static [string] GetModuleCodereviewyaml([string]$ModuleName) {
-    return Get-ModuleCodereviewyaml -n $ModuleName
-  }
-  static [string] GetModulePublishyaml([string]$ModuleName) {
-    return Get-ModulePublishyaml -n $ModuleName
-  }
-  static [string] GetModuleDelWorkflowsyaml([string]$ModuleName) {
-    return Get-ModuleDelWorkflowsyaml -n $ModuleName
-  }
-  static [Collection[PsModuleData]] ReplaceTemplates([Collection[PsModuleData]]$data) {
-    $templates = $data.Where({ $_.Type.Name -in ("String", "ScriptBlock") })
-    $hashtable = @{}; $data.Foreach({ $hashtable += @{ $_.Key = $_.Value } }); $keys = $hashtable.Keys
-    foreach ($item in $templates) {
-      [string]$n = $item.Key
-      [string]$t = $item.Type.Name
-      if ([string]::IsNullOrWhiteSpace($n)) { Write-Warning "`$item.Key is empty"; continue }
-      if ([string]::IsNullOrWhiteSpace($t)) { Write-Warning "`$item.Type.Name is empty"; continue }
-      switch ($t) {
-        'ScriptBlock' {
-          if ($null -eq $hashtable[$n]) { break }
-          $str = $hashtable[$n].ToString()
-          $keys.ForEach({
-              if ($str -match "<$_>") {
-                $str = $str.Replace("<$_>", $hashtable["$_"])
-                $item.Set([scriptblock]::Create($str))
-                Write-Debug "`$module.data.$($item.Key) Replaced <$_>)"
-              }
-            }
-          )
-          break
-        }
-        'String' {
-          if ($null -eq $hashtable[$n]) { break }
-          $str = $hashtable[$n]
-          $keys.ForEach({
-              if ($str -match "<$_>") {
-                $str = $str.Replace("<$_>", $hashtable["$_"])
-                $item.Set($str)
-                Write-Debug "`$module.data.$($item.Key) Replaced <$_>"
-              }
-            }
-          )
-          break
-        }
-        Default {
-          Write-Warning "Unknown Type: $t"
-          continue
-        }
-      }
-    }
-    return $data
-  }
-  static [string[]] GetModulePaths() {
-    return [PsModuleData]::GetModulePaths($null)
-  }
-  static [string[]] GetModulePaths([string]$scope) {
-    [string[]]$_Module_Paths = [Environment]::GetEnvironmentVariable('PSModulePath').Split([IO.Path]::PathSeparator)
-    if ([string]::IsNullOrWhiteSpace($scope)) { return $_Module_Paths }; [InstallScope]$scope = $scope
-    if (!(Get-Variable -Name IsWindows -ErrorAction Ignore) -or $(Get-Variable IsWindows -ValueOnly)) {
-      $psv = Get-Variable PSVersionTable -ValueOnly
-      $allUsers_path = Join-Path -Path $env:ProgramFiles -ChildPath $(if ($psv.ContainsKey('PSEdition') -and $psv.PSEdition -eq 'Core') { 'PowerShell' } else { 'WindowsPowerShell' })
-      if ("$Scope" -eq 'CurrentUser') { $_Module_Paths = $_Module_Paths.Where({ $_ -notlike "*$($allUsers_path | Split-Path)*" -and $_ -notlike "*$env:SystemRoot*" }) }
-    } else {
-      $allUsers_path = Split-Path -Path ([Platform]::SelectProductNameForDirectory('SHARED_MODULES')) -Parent
-      if ("$Scope" -eq 'CurrentUser') { $_Module_Paths = $_Module_Paths.Where({ $_ -notlike "*$($allUsers_path | Split-Path)*" -and $_ -notlike "*/var/lib/*" }) }
-    }
-    return $_Module_Paths
-  }
-}
 class PsModuleBase {
   static [bool] SaveModuledata([string]$stringsKey, [Object]$value) {
     return $null
@@ -603,7 +465,7 @@ class PsModuleBase {
   }
   static [Object[]] ExcludeProperties($Object, [string[]]$PropstoExclude) {
     $sp = [searchParams]::new(); $sp.PropstoExclude + $PropstoExclude
-    return [PsModuleData]::ExcludeProperties($Object, $sp)
+    return [PsModuleBase]::ExcludeProperties($Object, $sp)
   }
   static [Object[]] ExcludeProperties($Object, [searchParams]$SearchOptions) {
     $DefaultTypeProps = @()
@@ -840,7 +702,7 @@ class PsModuleBase {
 # Types that will be available to users when they import the module.
 $typestoExport = @(
   [PsModuleBase], [LocalPsModule], [InstallScope], [ModuleSource], [PSRepoItem], [PSGalleryItem],
-  [PsModuleData], [ModuleFile], [SearchParams], [ModuleFolder], [ModuleDataAttribute]
+  [ModuleItem], [ModuleFile], [ModuleItemType], [SearchParams], [ModuleFolder]
 )
 $TypeAcceleratorsClass = [PsObject].Assembly.GetType('System.Management.Automation.TypeAccelerators')
 foreach ($Type in $typestoExport) {

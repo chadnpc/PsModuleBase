@@ -37,18 +37,18 @@
 
     [switch]$NoNullResult
   )
-  begin {
-    if (![IO.Directory]::Exists($Source)) { [string]$Source = Resolve-Path $Source -ea Stop }
-    if (!$PSCmdlet.MyInvocation.BoundParameters.ContainsKey('File')) {
-      $File = [IO.Path]::Combine($Source, (Get-Culture).Name, "$([IO.DirectoryInfo]::New($Source).BaseName).strings.psd1");
-    }; $File = Resolve-Path $File;
-  }
+
   process {
-    if ($PSCmdlet.ParameterSetName -eq "ModuleName") {
-      $_res = [PsModuleBase]::ReadModuledata($Module, $Property)
-    } else {
+    if ($PSCmdlet.ParameterSetName -eq 'File') {
+      if (![IO.Directory]::Exists($Source)) { [string]$Source = Resolve-Path $Source -ea Stop }
+      if (!$PSCmdlet.MyInvocation.BoundParameters.ContainsKey('File')) {
+        $File = [IO.Path]::Combine($Source, (Get-Culture).Name, "$([IO.DirectoryInfo]::New($Source).BaseName).strings.psd1");
+      }; $File = Resolve-Path $File;
+
       $data = [scriptblock]::Create("$([IO.File]::ReadAllText($File))").Invoke()
       $_res = [string]::IsNullOrWhiteSpace($Property) ? $data : $data.$Property
+    } else {
+      $_res = [PsModuleBase]::ReadModuledata($Module, $Property)
     }
     if ($null -eq $_res -and $NoNullResult) {
       $Error_params = @{
