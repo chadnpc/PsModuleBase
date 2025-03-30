@@ -1,0 +1,18 @@
+﻿function Get-ModuleReadmeText {
+  [CmdletBinding()]
+  param (
+    [Parameter(Position = 0, Mandatory = $false)]
+    [Alias('n')][AllowNull()]
+    [string]$ModuleName
+  )
+  begin {
+    $txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("CiMgWzxNb2R1bGVOYW1lPl0oaHR0cHM6Ly93d3cucG93ZXJzaGVsbGdhbGxlcnkuY29tL3BhY2thZ2VzLzxNb2R1bGVOYW1lPikKCvCflKUgQmxhemluZ2x5IGZhc3QgUG93ZXJTaGVsbCB0aGluZ3kgdGhhdCBzdG9ua3MgdXAgeW91ciB0ZXJtaW5hbCBnYW1lLgoKWyFbQnVpbGQgTW9kdWxlXShodHRwczovL2dpdGh1Yi5jb20vY2hhZG5wYy88TW9kdWxlTmFtZT4vYWN0aW9ucy93b3JrZmxvd3MvYnVpbGRfbW9kdWxlLnlhbWwvYmFkZ2Uuc3ZnKV0oaHR0cHM6Ly9naXRodWIuY29tL2NoYWRucGMvPE1vZHVsZU5hbWU+L2FjdGlvbnMvd29ya2Zsb3dzL2J1aWxkX21vZHVsZS55YW1sKQoKPGEgaHJlZj0iaHR0cHM6Ly93d3cucG93ZXJzaGVsbGdhbGxlcnkuY29tL3BhY2thZ2VzLzxNb2R1bGVOYW1lPiIgdGFyZ2V0PSJfYmxhbmsiIHJlbD0ibm9vcGVuZXIgbm9yZWZlcnJlciI+CiAgPGltZyBhbHQ9Ik1vZHVsZSBWZXJzaW9uIiBzcmM9Imh0dHBzOi8vaW1nLnNoaWVsZHMuaW8vcG93ZXJzaGVsbGdhbGxlcnkvdi88TW9kdWxlTmFtZT4/aW5jbHVkZV9wcmVyZWxlYXNlcyZzdHlsZT1wbGFzdGljJmxhYmVsPU1vZHVsZSZsYWJlbENvbG9yPXJnYmEoMCUyQyUyMDAlMkMlMjAwJTJDJTIwMSkmY29sb3I9cmdiYSg3MyUyQyUyMDIxNSUyQyUyMDMwJTJDJTIwMC43KSI+CiAgPGltZyBhbHQ9Ik1vZHVsZSBEb3dubG9hZHMiIHNyYz0iaHR0cHM6Ly9pbWcuc2hpZWxkcy5pby9wb3dlcnNoZWxsZ2FsbGVyeS9kdC88TW9kdWxlTmFtZT4/c3R5bGU9ZmxhdCZsb2dvPWdvb2dsZWdlbWluaSZsYWJlbENvbG9yPXJnYmEoMCUyQyUyMDAlMkMlMjAwJTJDJTIwMSkmY29sb3I9cmdiYSg3MyUyQyUyMDIxNSUyQyUyMDMwJTJDJTIwMC43KSI+CjwvYT4KCiMjIFVzYWdlCgpgYGBQb3dlclNoZWxsCkluc3RhbGwtTW9kdWxlIDxNb2R1bGVOYW1lPgpgYGAKCnRoZW4KCmBgYFBvd2VyU2hlbGwKSW1wb3J0LU1vZHVsZSA8TW9kdWxlTmFtZT4KIyBkbyBzdHVmZiBoZXJlLgpgYGAKCiMjIExpY2Vuc2UKClRoaXMgcHJvamVjdCBpcyBsaWNlbnNlZCB1bmRlciB0aGUgW1dURlBMIExpY2Vuc2VdKExJQ0VOU0UpLgoK"));
+  }
+  process {
+    if ([string]::IsNullOrWhiteSpace($ModuleName)) {
+      return $txt
+    } else {
+      return $txt.Replace("<ModuleName>", "ModuleName")
+    }
+  }
+}
