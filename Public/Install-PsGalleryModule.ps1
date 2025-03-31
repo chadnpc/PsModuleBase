@@ -26,59 +26,15 @@
     [switch]$Passthru
   )
   Begin {
-    $Get_Install_Path = [scriptblock]::Create({
-        param([string]$Name, [string]$ReqVersion)
-        $p = [IO.DirectoryInfo][IO.Path]::Combine(
-          $(if (!(Get-Variable -Name IsWindows -ErrorAction Ignore) -or $(Get-Variable IsWindows -ValueOnly)) {
-              $_versionTable = Get-Variable PSVersionTable -ValueOnly
-              $module_folder = if ($_versionTable.ContainsKey('PSEdition') -and $_versionTable.PSEdition -eq 'Core') { 'PowerShell' } else { 'WindowsPowerShell' }
-              Join-Path -Path $([System.Environment]::GetFolderPath('MyDocuments')) -ChildPath $module_folder
-            } else {
-              Split-Path -Path ([System.Management.Automation.Platform]::SelectProductNameForDirectory('USER_MODULES')) -Parent
-            }
-          ), 'Modules'
-        )
-        if (![string]::IsNullOrWhiteSpace($ReqVersion)) {
-          [IO.Path]::Combine($p.FullName, $Name, $ReqVersion)
-        } else {
-          [IO.Path]::Combine($p.FullName, $Name)
-        }
-      }
-    )
-    [int]$ret = 0; $response = $null; $downloadUrl = ''; $Module_Path = ''
-    $InstallModule = [scriptblock]::Create({
-        # There are issues with pester 5.4.1 syntax, so I'll keep using -SkipPublisherCheck.
-        # https://stackoverflow.com/questions/51508982/pester-sample-script-gets-be-is-not-a-valid-should-operator-on-windows-10-wo
-        if ($Version -eq 'latest') {
-          Install-Module -Name $moduleName -SkipPublisherCheck:$($moduleName -eq 'Pester')
-        } else {
-          Install-Module -Name $moduleName -RequiredVersion $Version -SkipPublisherCheck:$($moduleName -eq 'Pester')
-        }
-      }
-    )
-    $UpdateModule = [scriptblock]::Create({
-        try {
-          if ($Version -eq 'latest') {
-            Update-Module -Name $moduleName
-          } else {
-            Update-Module -Name $moduleName -RequiredVersion $Version
-          }
-        } catch {
-          if ($ret -lt 1 -and $_.ErrorRecord.Exception.Message -eq "Module '$moduleName' was not installed by using Install-Module, so it cannot be updated.") {
-            Get-Module $moduleName | Remove-Module -Force -ErrorAction Ignore; $ret++
-            $UpdateModule.Invoke()
-          }
-        }
-      }
-    )
+    [LocalPsModule]::ret = 0; $response = $null; $downloadUrl = ''; $Module_Path = ''
   }
   Process {
     # Try Using normal Installation
     try {
       if ($PSCmdlet.MyInvocation.BoundParameters['UpdateOnly']) {
-        $UpdateModule.Invoke()
+        [LocalPsModule]::Update($ModuleName, $Version)
       } else {
-        $InstallModule.Invoke()
+        [LocalPsModule]::Install($ModuleName, $Version)
       }
       $Module_Path = (Get-LocalModule -Name $moduleName).Psd1 | Split-Path -ErrorAction Stop
     } catch {
@@ -102,7 +58,7 @@
         [ValidateNotNullOrEmpty()][string]$downloadUrl = $response.content.src
         [ValidateNotNullOrEmpty()][string]$moduleName = $response.properties.Id
         [ValidateNotNullOrEmpty()][string]$Version = $response.properties.Version
-        $Module_Path = $Get_Install_Path.Invoke($moduleName, $Version)
+        $Module_Path = [LocalPsModule]::GetInstallPath($moduleName, $Version)
       } catch {
         $Error_params = @{
           ExceptionName    = 'System.InvalidOperationException'

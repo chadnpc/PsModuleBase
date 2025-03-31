@@ -13,6 +13,20 @@
   param (
     [Parameter(Position = 0, Mandatory = $false, ValueFromPipeline = $true, ParameterSetName = 'ModuleName')]
     [ValidateNotNullOrWhiteSpace()][Alias('m')][string]
+    [ArgumentCompleter({
+        [OutputType([System.Management.Automation.CompletionResult])]
+        param(
+          [string] $CommandName,
+          [string] $ParameterName,
+          [string] $WordToComplete,
+          [System.Management.Automation.Language.CommandAst] $CommandAst,
+          [System.Collections.IDictionary] $FakeBoundParameters
+        )
+        $CompletionResults = [System.Collections.Generic.List[CompletionResult]]::new()
+        $matchingNames = [LocalPsModule]::new().GetValidValues().Where({ $_ -like "$WordToComplete*" })
+        foreach ($n in $matchingNames) { $CompletionResults.Add([System.Management.Automation.CompletionResult]::new($n)) }
+        return $CompletionResults
+      })]
     $Module = $PSScriptRoot,
 
     [Parameter(Position = 0, Mandatory = $false, ValueFromPipeline = $true, ParameterSetName = 'File')]

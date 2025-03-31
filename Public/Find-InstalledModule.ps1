@@ -15,6 +15,20 @@ function Find-InstalledModule {
     # The name of the module to search for.
     [Parameter(Position = 0, Mandatory = $false, ParameterSetName = '__AllParameterSets')]
     [Alias('n')][ValidateNotNullOrWhiteSpace()]
+    [ArgumentCompleter({
+        [OutputType([System.Management.Automation.CompletionResult])]
+        param(
+          [string] $CommandName,
+          [string] $ParameterName,
+          [string] $WordToComplete,
+          [System.Management.Automation.Language.CommandAst] $CommandAst,
+          [System.Collections.IDictionary] $FakeBoundParameters
+        )
+        $CompletionResults = [System.Collections.Generic.List[CompletionResult]]::new()
+        $matchingNames = [LocalPsModule]::new().GetValidValues().Where({ $_ -like "$WordToComplete*" })
+        foreach ($n in $matchingNames) { $CompletionResults.Add([System.Management.Automation.CompletionResult]::new($n)) }
+        return $CompletionResults
+      })]
     [string]$Name,
 
     # The scope of the module (LocalMachine or CurrentUser).
@@ -48,14 +62,14 @@ function Find-InstalledModule {
   process {
     try {
       $res = switch ($true) {
-        $($hsn -and $hss -and $hsv) { [PsCraft]::FindLocalPsModule($Name, $Scope, $Version); break }
-        $($hsn -and $hss) { [PsCraft]::FindLocalPsModule($Name, $Scope); break }
-        $($hsn -and $hsv) { [PsCraft]::FindLocalPsModule($Name, $Version); break }
-        $($hsm -and $hsn) { [PsCraft]::FindLocalPsModule($Name, $ModuleBase); break }
-        $hsn { [PsCraft]::FindLocalPsModule($Name); break }
-        $hsm { [PsCraft]::FindLocalPsModule($ModuleBase.FullName); break }
+        $($hsn -and $hss -and $hsv) { [LocalPsModule]::Find($Name, $Scope, $Version); break }
+        $($hsn -and $hss) { [LocalPsModule]::Find($Name, $Scope); break }
+        $($hsn -and $hsv) { [LocalPsModule]::Find($Name, $Version); break }
+        $($hsm -and $hsn) { [LocalPsModule]::Find($Name, $ModuleBase); break }
+        $hsn { [LocalPsModule]::Find($Name); break }
+        $hsm { [LocalPsModule]::Find($ModuleBase.FullName); break }
         Default {
-          [PsCraft]::FindLocalPsModule("*")
+          [LocalPsModule]::Find("*")
         }
       }
     } catch {
