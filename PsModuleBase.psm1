@@ -31,7 +31,7 @@ class SearchParams {
   [string[]] $PropstoExclude
   [string[]] $PropstoInclude
   [SearchOption] $searchOption
-  hidden [string[]]$Values
+  hidden [string[]] $Values
   [int]$MaxDepth = 10
 }
 
@@ -65,28 +65,39 @@ class ModuleFile : ModuleItem {
 
 # a custom config file helper class
 class ConfigFile : MarshalByRefObject {
-  hidden [ValidateNotNullOrWhiteSpace()][string]$_suffix = "-config"
+  hidden [ValidateNotNullOrWhiteSpace()][string]$_suffix
   ConfigFile() {
     [void][ConfigFile]::From("", [ref]$this)
   }
   ConfigFile([string]$fileName) {
-    if ([string]::IsNullOrWhiteSpace($fileName)) {
-      throw [ArgumentException]::new("Please provide a valid fileName")
-    }
+    [void][ConfigFile]::ValidateFileName($fileName, $true)
     [void][ConfigFile]::From($fileName, [ref]$this)
+  }
+  ConfigFile([PSCustomObject]$object) {
+    [void][ConfigFile]::ValidateFileName($object.Path, $true)
+    [void][ConfigFile]::From($object.Path, $object.Suffix, [ref]$this)
+  }
+  ConfigFile([string]$fileName, [string]$suffix) {
+    [void][ConfigFile]::ValidateFileName($fileName, $true)
+    [void][ConfigFile]::From($fileName, $suffix, [ref]$this)
   }
   static [ConfigFile] Create([string]$fileName) {
     return [ConfigFile]::new($fileName)
   }
+  static [ConfigFile] Create([string]$fileName, [string]$suffix) {
+    return [ConfigFile]::new($fileName, $suffix)
+  }
   static hidden [ConfigFile] From([string]$fileName, [ref]$o) {
-    $n = [string]::IsNullOrWhiteSpace($fileName) ? $([Guid]::NewGuid().Guid + $o.Value._suffix) : $fileName; $f = ''
+    return [ConfigFile]::From($fileName, "-config", $o)
+  }
+  static hidden [ConfigFile] From([string]$fileName, [string]$suffix, [ref]$o) {
+    $n = [string]::IsNullOrWhiteSpace($fileName) ? $([Guid]::NewGuid().Guid + $suffix) : $fileName; $f = ''
     $n = $n.EndsWith(".json") ? $n : "$n.json"; [ValidateNotNullOrWhiteSpace()][string]$f = [string][PsModuleBase]::GetUnResolvedPath($n)
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$f'")))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('BaseName', { return [IO.Path]::GetFileNameWithoutExtension($this.FullName) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { Param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value)) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { Param([string]$value) [void][ConfigFile]::ValidateFileName($value, $true); $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value)) }))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Extension', { return [IO.Path]::GetExtension($this.FullName) }, { Param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $e = $value.StartsWith(".") ? $value : ".$value"; $this.Rename(('{0}{1}' -f $this.BaseName, $e)) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Suffix', { return $this._suffix }, { Param([string]$value) $cs = $this.Suffix; $this._suffix = $value; $this.Name = $this.Name.Replace(($cs + $this.Extension), ($value + $this.Extension)) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Exists', { return [IO.File]::Exists($this.FullName) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Exists', { return [IO.File]::Exists($this.FullName) })); $o.Value.SetSuffix($suffix);
     return $o.Value
   }
   [void] Delete() { [IO.File]::Delete($this.FullName) }
@@ -97,6 +108,25 @@ class ConfigFile : MarshalByRefObject {
       $s = $this.Create(); $s.Dispose()
     }; $nf = ''; [ValidateNotNullOrWhiteSpace()][string]$nf = Rename-Item -Path $this.FullName -NewName $nn -Force -Verbose:$false -PassThru
     $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$nf'")))
+  }
+  [string] GetSuffix() {
+    return $this.BaseName.EndsWith($this._suffix) ? $this._suffix : ''
+  }
+  [void] SetSuffix([string]$value) {
+    [void][ConfigFile]::ValidateFileName($value, $true); $cs = $this.GetSuffix();
+    if (!$this.BaseName.EndsWith($value)) { $this.Name = $this.Name.Replace(($cs + $this.Extension), ($value + $this.Extension)) }
+    $this._suffix = $value;
+  }
+  static [bool] ValidateFileName([string]$fileName) {
+    return [ConfigFile]::ValidateFileName($fileName, $false)
+  }
+  static [bool] ValidateFileName([string]$fileName, [bool]$throwOnFailure) {
+    if ([string]::IsNullOrWhiteSpace($fileName) -and $throwOnFailure) { throw [ArgumentNullException]::new("Please provide a valid Name.") }
+    $i = [string[]][IO.Path]::GetInvalidFileNameChars()
+    $c = [string[]][char[]]$fileName
+    $v = $c.Where({ $_ -in $i }).count -eq 0
+    if (!$v -and $throwOnFailure) { throw [ArgumentException]::new("Invalid Name. See [Path]::GetInvalidFileNameChars()") }
+    return $v
   }
   [FileStream] Create() {
     return $this.Exists ? ([IO.File]::OpenRead($this.FullName)) : ([IO.File]::Create($this.FullName))
@@ -114,6 +144,15 @@ class ConfigFile : MarshalByRefObject {
   [FileInfo] MoveTo([string]$destFileName, [bool]$overwrite) {
     [void][IO.File]::Move($this.FullName, $destFileName)
     return [IO.FileInfo]::new($destFileName)
+  }
+  [Hashtable] ToHashtable() {
+    return @{
+      Path   = $this.FullName
+      Suffix = $this.GetSuffix()
+    }
+  }
+  [string] ToJson() {
+    return ConvertTo-Json($this.ToHashtable())
   }
   [string] ToString() {
     return $this.FullName
@@ -215,7 +254,7 @@ class LocalPsModule : System.Management.Automation.IValidateSetValuesGenerator {
     $o = [LocalPsModule]::new(); return [LocalPsModule]::From($Name, $scope, $version, [ref]$o)
   }
   static hidden [LocalPsModule] From([string]$Name, [string]$scope, [version]$version, [ref]$o) {
-    if ($null -eq $o) { throw "reference is null" };
+    if ($null -eq $o) { throw [ArgumentException]::new("reference is null") };
     $m = [LocalPsModule]::Find($Name, $scope, $version);
     if ($null -eq $m) { $m = [LocalPsModule]::new() }
     $o.value.GetType().GetProperties().ForEach({
