@@ -70,15 +70,15 @@ class ConfigFile : MarshalByRefObject {
     [void][ConfigFile]::From("", [ref]$this)
   }
   ConfigFile([string]$fileName) {
-    [void][ConfigFile]::ValidateFileName($fileName, $true)
+    [void][ConfigFile]::IsValidFilePath($fileName, $true)
     [void][ConfigFile]::From($fileName, [ref]$this)
   }
   ConfigFile([PSCustomObject]$object) {
-    [void][ConfigFile]::ValidateFileName($object.Path, $true)
+    [void][ConfigFile]::IsValidFilePath($object.Path, $true)
     [void][ConfigFile]::From($object.Path, $object.Suffix, [ref]$this)
   }
   ConfigFile([string]$fileName, [string]$suffix) {
-    [void][ConfigFile]::ValidateFileName($fileName, $true)
+    [void][ConfigFile]::IsValidFilePath($fileName, $true)
     [void][ConfigFile]::From($fileName, $suffix, [ref]$this)
   }
   static [ConfigFile] Create([string]$fileName) {
@@ -93,63 +93,109 @@ class ConfigFile : MarshalByRefObject {
   static hidden [ConfigFile] From([string]$fileName, [string]$suffix, [ref]$o) {
     $n = [string]::IsNullOrWhiteSpace($fileName) ? $([Guid]::NewGuid().Guid + $suffix) : $fileName; $f = ''
     $n = $n.EndsWith(".json") ? $n : "$n.json"; [ValidateNotNullOrWhiteSpace()][string]$f = [string][PsModuleBase]::GetUnResolvedPath($n)
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$f'")))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$f'"), { Param([string]$value) $this.set_fullName($value) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Directory', { return [DirectoryInfo](Split-Path $this.FullName -ea Ignore) }, { Param([string]$value) $this.set_directory($value) }))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('BaseName', { return [IO.Path]::GetFileNameWithoutExtension($this.FullName) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { Param([string]$value) [void][ConfigFile]::ValidateFileName($value, $true); $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value)) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Extension', { return [IO.Path]::GetExtension($this.FullName) }, { Param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $e = $value.StartsWith(".") ? $value : ".$value"; $this.Rename(('{0}{1}' -f $this.BaseName, $e)) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { Param([string]$value) $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value), $false) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Extension', { return [IO.Path]::GetExtension($this.FullName) }, { Param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $e = $value.StartsWith(".") ? $value : ".$value"; $this.Rename(('{0}{1}' -f $this.BaseName, $e), $false) }))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Exists', { return [IO.File]::Exists($this.FullName) })); $o.Value.SetSuffix($suffix);
     return $o.Value
   }
   [void] Delete() { [IO.File]::Delete($this.FullName) }
   [void] Decrypt() { [IO.File]::Decrypt($this.FullName) }
-  [void] Encrypt() { [IO.File]::Encrypt($this.FullName) }
-  [void] Rename([string]$nn) {
-    [ValidateNotNullOrWhiteSpace()][string]$nn = $nn; if (!$this.Exists) {
-      $s = $this.Create(); $s.Dispose()
-    }; $nf = ''; [ValidateNotNullOrWhiteSpace()][string]$nf = Rename-Item -Path $this.FullName -NewName $nn -Force -Verbose:$false -PassThru
-    $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$nf'")))
+  [void] Encrypt() {
+    # TODO: use [PsModuleBase]::ProtectFile(string Path ...
+    [IO.File]::Encrypt($this.FullName)
   }
   [string] GetSuffix() {
     return $this.BaseName.EndsWith($this._suffix) ? $this._suffix : ''
   }
   [void] SetSuffix([string]$value) {
-    [void][ConfigFile]::ValidateFileName($value, $true); $cs = $this.GetSuffix();
+    if (![string]::IsNullOrWhiteSpace($value) -and ![ConfigFile]::IsValidFilePath($value)) {
+      # ie: empty string is allowed
+      throw [ArgumentNullException]::new("Please provide a valid suffix.")
+    }
+    $cs = $this.GetSuffix();
     if (!$this.BaseName.EndsWith($value)) { $this.Name = $this.Name.Replace(($cs + $this.Extension), ($value + $this.Extension)) }
     $this._suffix = $value;
   }
-  static [bool] ValidateFileName([string]$fileName) {
-    return [ConfigFile]::ValidateFileName($fileName, $false)
+  [void] Rename([string]$nn) { $this.Rename($nn, $false) }
+  [void] Rename([string]$nn, [bool]$savefile) {
+    [void][ConfigFile]::IsValidFilePath($nn, $true)
+    if ($savefile) { $this.Save() };
+    $nf = ''; [ValidateNotNullOrWhiteSpace()][string]$nf = $this.Exists ? (Rename-Item -Path $this.FullName -NewName $nn -Force -Verbose:$false -PassThru) : ([IO.Path]::Combine((Split-Path $this.FullName), $nn))
+    if ($?) { $this.set_fullName($nf) }
   }
-  static [bool] ValidateFileName([string]$fileName, [bool]$throwOnFailure) {
+  static [bool] IsValidFilePath([string]$fileName) {
+    return [ConfigFile]::IsValidFilePath($fileName, $false)
+  }
+  static [bool] IsValidFilePath([string]$fileName, [bool]$throwOnFailure) {
     if ([string]::IsNullOrWhiteSpace($fileName) -and $throwOnFailure) { throw [ArgumentNullException]::new("Please provide a valid Name.") }
-    $i = [string[]][IO.Path]::GetInvalidFileNameChars()
-    $c = [string[]][char[]]$fileName
-    $v = $c.Where({ $_ -in $i }).count -eq 0
+    $v = [IO.Path]::IsPathFullyQualified($fileName); if (!$v) {
+      $i = [string[]][IO.Path]::GetInvalidFileNameChars()
+      $c = [string[]][char[]]$fileName
+      $v = $c.Where({ $_ -in $i }).count -eq 0
+    }
     if (!$v -and $throwOnFailure) { throw [ArgumentException]::new("Invalid Name. See [Path]::GetInvalidFileNameChars()") }
     return $v
-  }
-  [FileStream] Create() {
-    return $this.Exists ? ([IO.File]::OpenRead($this.FullName)) : ([IO.File]::Create($this.FullName))
   }
   [FileInfo] CopyTo([string]$destFileName) {
     return $this.CopyTo($destFileName, $false)
   }
   [FileInfo] CopyTo([string]$destFileName, [bool]$overwrite) {
-    [void][IO.File]::Copy($this.FullName, $destFileName, $overwrite)
-    return [IO.FileInfo]::new($destFileName)
+    [void][ConfigFile]::IsValidFilePath($destFileName, $true); $this.Save()
+    return Copy-Item -Path $this.FullName -Destination ([PsModuleBase]::GetUnResolvedPath($destFileName)) -Force:$overwrite -PassThru
   }
-  [FileInfo] MoveTo([string]$destFileName) {
-    return $this.MoveTo($destFileName, $false)
+  [void] Save() {
+    $this.Save($this.ToJson())
   }
-  [FileInfo] MoveTo([string]$destFileName, [bool]$overwrite) {
-    [void][IO.File]::Move($this.FullName, $destFileName)
-    return [IO.FileInfo]::new($destFileName)
+  [void] Save([string]$content) {
+    [ValidateNotNullOrWhiteSpace()][string]$content = $content
+    if (!$this.Exists) { $s = [IO.File]::Create($this.FullName); $s.Close(); $s.Dispose() }
+    [IO.File]::WriteAllText($this.FullName, $content)
+  }
+  [FileInfo] MoveTo([string]$destDirName) {
+    return $this.MoveTo($destDirName, $false)
+  }
+  [FileInfo] MoveTo([string]$destDirName, [bool]$overwrite) {
+    [void][ConfigFile]::IsValidFilePath($destDirName, $true); $this.Save()
+    [FileInfo]$nf = Move-Item -Path $this.FullName -Destination ([PsModuleBase]::GetUnResolvedPath($destDirName)) -Force:$overwrite -PassThru
+    if ($?) { $this.set_fullName($nf) }
+    return $nf
+  }
+  hidden [void] set_fullName([string]$value) {
+    $nf = ''; [ValidateNotNullOrWhiteSpace()][string]$nf = [PsModuleBase]::GetUnResolvedPath($value)
+    $this.set_directory((Split-Path $nf -ea Stop));
+    $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$nf'"), { Param([string]$value) $this.set_fullName($value) }))
+  }
+  hidden [void] set_directory([string]$value) {
+    $_fdir = [PsModuleBase]::GetUnResolvedPath($value)
+    if (![IO.Path]::IsPathFullyQualified($_fdir)) {
+      throw [System.ArgumentException]::new("Please provide a valid directory path")
+    }
+    ($_fdir -ne "$($this.Directory)" -and $this.Exists) ? $this.MoveTo($_fdir) : $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$([IO.Path]::Combine($_fdir, $this.Name))'"), { Param([string]$value) $this.set_fullName($value) }))
+  }
+  [string] ReadAllText() {
+    return [IO.File]::ReadAllText($this.FullName)
+  }
+  [IEnumerable[string]] ReadLines() {
+    return [IO.File]::ReadLines($this.FullName)
+  }
+  [byte[]] ReadAllBytes() {
+    return [IO.File]::ReadAllBytes($this.FullName)
+  }
+  [string[]] ReadAllLines() {
+    return [IO.File]::ReadAllLines($this.FullName)
   }
   [Hashtable] ToHashtable() {
     return @{
       Path   = $this.FullName
       Suffix = $this.GetSuffix()
     }
+  }
+  [void] Import([string]$FilePath) {
+    $o = ConvertFrom-Json([IO.File]::ReadAllText([PsModuleBase]::GetResolvedPath($FilePath)))
+    [ConfigFile]::new($o.Path, $o.Suffix).PsObject.Properties.Where({ $_.IsSettable }).ForEach({ $this.$_.Name = $_.value })
   }
   [string] ToJson() {
     return ConvertTo-Json($this.ToHashtable())
