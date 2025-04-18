@@ -202,6 +202,9 @@ class ConfigFile : MarshalByRefObject {
   [string] ToJson() {
     return ConvertTo-Json($this.ToHashtable())
   }
+  [string] ToClixml() {
+    return [PSSerializer]::Serialize($this)
+  }
   [string] ToString() {
     return $this.FullName
   }
