@@ -2,6 +2,7 @@
 using namespace System.IO
 using namespace System.Text
 using namespace system.reflection
+using namespace System.Collections
 using namespace System.ComponentModel
 using namespace System.Collections.Generic
 using namespace System.Security.Cryptography
@@ -9,7 +10,10 @@ using namespace System.Management.Automation
 using namespace Microsoft.PowerShell.Commands
 using namespace System.Runtime.InteropServices
 using namespace System.Collections.ObjectModel
+using namespace System.Management.Automation.Configuration
 using namespace System.Security.Cryptography.X509Certificates
+
+#Requires -Psedition Core
 
 #region    Classes
 enum ModuleSource {
@@ -65,6 +69,7 @@ class ModuleFile : ModuleItem {
 
 # a custom config file helper class
 class ConfigFile : MarshalByRefObject {
+  [ConfigScope]$Scope
   hidden [string]$_suffix
   ConfigFile() {
     [void][ConfigFile]::From([Guid]::NewGuid().Guid, [ref]$this)
@@ -137,15 +142,15 @@ class ConfigFile : MarshalByRefObject {
   static [bool] IsValidFilePath([string]$fileName) {
     return [ConfigFile]::IsValidFilePath($fileName, $false)
   }
-  static [bool] IsValidFilePath([string]$fileName, [bool]$throwOnFailure) {
-    if ([string]::IsNullOrWhiteSpace($fileName) -and $throwOnFailure) { throw [ArgumentNullException]::new("Please provide a valid filePath.") }
+  static [bool] IsValidFilePath([string]$fileName, [bool]$throwOnError) {
+    if ([string]::IsNullOrWhiteSpace($fileName) -and $throwOnError) { throw [ArgumentNullException]::new("Please provide a valid filePath.") }
     $c = [string[]][char[]]$fileName
     $v = [IO.Path]::IsPathFullyQualified($fileName); if (!$v) {
       $i = [string[]][IO.Path]::GetInvalidFileNameChars()
       $v = $c.Where({ $_ -in $i }).count -eq 0
     }
     $v = $v -and ($c.Where({ $_ -in ([IO.Path]::GetInvalidPathChars()) }).count -eq 0)
-    if (!$v -and $throwOnFailure) { throw [ArgumentException]::new("Invalid filePath. See [Path]::GetInvalidFileNameChars() and [Path]::GetInvalidPathChars()") }
+    if (!$v -and $throwOnError) { throw [ArgumentException]::new("Invalid filePath. See [Path]::GetInvalidFileNameChars() and [Path]::GetInvalidPathChars()") }
     return $v
   }
   [FileInfo] CopyTo([string]$destFileName) {
@@ -213,6 +218,45 @@ class ConfigFile : MarshalByRefObject {
 class ModuleFolder: ModuleItem {
   ModuleFolder([string]$Name, [string]$value): base ($name, [DirectoryInfo]::new($value)) { $this._init_("Directory") }
   ModuleFolder([string]$Name, [DirectoryInfo]$value) : base($name, $value) { $this._init_("Directory") }
+}
+
+class PsReadOnlySet : ReadOnlySet[PsObject] {
+  # Empty
+  # Count
+  PsReadOnlySet([PsObject[]]$e) : base([PsReadOnlySet]::GetISet($e)) {
+    # pscript properties go here
+    # $this.PsObject.properties.Add()
+  }
+  static [PSCustomObject] GetMethods() {
+    $s = [PsReadOnlySet]::new([PsObject]::new())
+    $m = [PsReadOnlySet].GetMethods() | Where-Object { !$_.IsSpecialName -and $_.Name -ne "GetMethods" } | Select-Object IsStatic, Name, ReturnType
+    $m = $m | Select-Object *, @{l = "OverloadDefinitions"; e = { $s.($_.Name).ToString() } }
+    return $m
+  }
+  static [ISet[PsObject]] GetISet([PsObject[]]$e) {
+    $hs = [HashSet[PsObject]]::new(); $e.ForEach({ $hs.Add($_) })
+    return $hs
+  }
+  [Stack] ToStack() {
+    return [Stack]::new($this.ToArrayList())
+  }
+  [ArrayList] ToArrayList() {
+    $list = [ArrayList]::new()
+    $this.GetEnumerator().ForEach({ $list.Add($_) })
+    return $list
+  }
+  [SortedList] ToSortedList([string]$Property) {
+    return $this.ToSortedList($Property, $true)
+  }
+  [SortedList] ToSortedList([string]$Property, [bool]$descending) {
+    [ValidateNotNullOrWhiteSpace()][string]$Property = $Property
+    $list = [SortedList]::new(); [int]$i = 0
+    $this.GetEnumerator() | Sort-Object -Property $Property -Descending:$descending | ForEach-Object { $list.Add($i, $_); $i++ }
+    return $list
+  }
+  [string[]] ToString() {
+    return $this.GetEnumerator().ForEach({ $_.ToString() })
+  }
 }
 
 class PSGalleryItem {
@@ -495,11 +539,11 @@ class PsModuleBase {
     $File = [IO.Path]::Combine($Parent, (Get-Culture).Name, "$([IO.DirectoryInfo]::New($Parent).BaseName).strings.psd1");
     return [PsModuleBase]::ValidadePsd1File($File)
   }
-  static [bool] ValidadePsd1File([IO.FileInFo]$File, [bool]$throwOnFailure) {
+  static [bool] ValidadePsd1File([IO.FileInFo]$File, [bool]$throwOnError) {
     $e = [IO.File]::Exists($File.FullName)
-    if (!$e -and $throwOnFailure) { throw [IO.FileNotFoundException]::new("File $($File.FullName) was not found. Make sure the module is Installed and try again") }
+    if (!$e -and $throwOnError) { throw [IO.FileNotFoundException]::new("File $($File.FullName) was not found. Make sure the module is Installed and try again") }
     $v = $e -and ($File.Extension -eq ".psd1")
-    if (!$v -and $throwOnFailure) {
+    if (!$v -and $throwOnError) {
       throw [System.ArgumentException]::new("File '$File' is not valid. Please provide a valid path/to/<modulename>.Strings.psd1", 'Path')
     }
     return $v
@@ -1546,7 +1590,7 @@ class PsModuleBase {
 
 # Types that will be available to users when they import the module.
 $typestoExport = @(
-  [PsModuleBase], [LocalPsModule], [InstallScope], [ModuleSource], [PSRepoItem], [PSGalleryItem],
+  [PsModuleBase], [LocalPsModule], [InstallScope], [ModuleSource], [PsReadOnlySet], [PSRepoItem], [PSGalleryItem],
   [ModuleItem], [ModuleFile], [ConfigFile], [ModuleItemType], [SearchParams], [ModuleFolder]
 )
 $TypeAcceleratorsClass = [PsObject].Assembly.GetType('System.Management.Automation.TypeAccelerators')

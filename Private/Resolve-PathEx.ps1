@@ -75,7 +75,7 @@
         Input   = $pathEntry
         Path    = $null
         Success = $false
-        Message = ''
+        Message = [string]::Empty
         Error   = $null
       }
 
