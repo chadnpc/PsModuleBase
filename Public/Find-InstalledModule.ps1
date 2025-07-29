@@ -68,7 +68,7 @@ function Find-InstalledModule {
         $($hsm -and $hsn) { [LocalPsModule]::Find($Name, $ModuleBase); break }
         $hsn { [LocalPsModule]::Find($Name); break }
         $hsm { [LocalPsModule]::Find($ModuleBase.FullName); break }
-        Default {
+        default {
           [LocalPsModule]::Find("*")
         }
       }

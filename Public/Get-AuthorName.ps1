@@ -24,7 +24,7 @@
             $s.Split(":")[4]
             break
           }
-          Default {
+          default {
             Write-Warning -Message "$([Environment]::OSVersion.Platform) OS is Not supported!"
           }
         }

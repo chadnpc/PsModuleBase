@@ -7,9 +7,9 @@
   .Example
     $items = Get-PSGalleryItems -Author 'Alain Herve'
   .Example
-    $null = Get-PSGalleryItems -Author 'Alain Herve' -OutFolder $env:HOME/my_psgallery_items
+    $null = Get-PSGalleryItems -Author 'Alain Herve' -OutFolder $HOME/my_psgallery_items
 
-    This will find all items where 'Alain Herve' is listed as an author, and save them into $env:HOME/my_psgallery_items.
+    This will find all items where 'Alain Herve' is listed as an author, and save them into $HOME/my_psgallery_items.
     The folder will be created if it does not exist.
   .LINK
     https://github.com/chadnpc/PsCraft/blob/main/Public/Get-PSGalleryItems.ps1
@@ -29,7 +29,7 @@
   process {
     $Items = [System.Collections.Generic.List[PSGalleryItem]]::new(); $OutFolderExists = Test-Path -Path $OutFolder -ea Ignore
     if ($PSBoundParameters.ContainsKey('OutFolder')) {
-      If (!$OutFolderExists) {
+      if (!$OutFolderExists) {
         Write-Console "Creating folder $OutFolder" -f LimeGreen
         New-Item $OutFolder -ItemType Directory
       }

@@ -28,7 +28,7 @@
       if (!$Latest_ModuleVerion -or $Latest_ModuleVerion -eq ([version]::New())) {
         $exception = [System.Management.Automation.ItemNotFoundException]::new("ResolveModule.Get-LatestModuleVersion: Failed to find latest module version for '$_'.")
         $errorRecord = [System.Management.Automation.ErrorRecord]::new($exception, 'CouldNotFindModule', 'OperationStopped', $_)
-        if ((Test-Connection -TargetName www.powershellgallery.com -Traceroute).Reply.Status -Contains "TimeExceeded") {
+        if ((Test-Connection -TargetName www.powershellgallery.com -Traceroute).Reply.Status -contains "TimeExceeded") {
           $PSCmdlet.WriteError($errorRecord)
         } else {
           $PSCmdlet.ThrowTerminatingError($errorRecord)

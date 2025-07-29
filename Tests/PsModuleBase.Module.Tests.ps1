@@ -8,7 +8,7 @@ Write-Host "      ModuleName    $ModuleName"
 Write-Host "      ModulePath    $ModulePath"
 Write-Host "      Version       $moduleVersion`n"
 
-Get-Module -Name $ModuleName | Remove-Module # Make sure no versions of the module are loaded
+Get-Module -Name $ModuleName | Remove-Module -Force # Make sure no versions of the module are loaded
 
 Write-Host "[+] Reading module information ..." -ForegroundColor Green
 $script:ModuleInformation = Import-Module -Name "$ModulePath" -PassThru
@@ -49,9 +49,9 @@ Describe "Module tests for $($([Environment]::GetEnvironmentVariable($env:RUN_ID
     }
 
     It "The number of missing functions should be 0 " {
-      If ($ExportedFunctions.count -ne $PS1Functions.count) {
+      if ($ExportedFunctions.count -ne $PS1Functions.count) {
         $Compare = Compare-Object -ReferenceObject $ExportedFunctions -DifferenceObject $PS1Functions.Basename
-        $($Compare.InputObject -Join '').Trim() | Should -BeNullOrEmpty
+        $($Compare.InputObject -join '').Trim() | Should -BeNullOrEmpty
       }
     }
   }

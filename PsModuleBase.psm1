@@ -99,11 +99,11 @@ class ConfigFile : MarshalByRefObject {
     $n = ''; $f = ''; [void][ConfigFile]::IsValidFilePath($fileName, $true);
     [ValidateNotNullOrWhiteSpace()][string]$n = [PsModuleBase]::GetUnResolvedPath((![string]::IsNullOrWhiteSpace($suffix) ? ($fileName + $suffix) : $fileName));
     [ValidateNotNullOrWhiteSpace()][string]$f = [IO.File]::Exists($n) ? $n : ($n.EndsWith(".json") ? $n : "$n.json")
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$f'"), { Param([string]$value) $this.set_fullName($value) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Directory', { return [DirectoryInfo](Split-Path $this.FullName -ea Ignore) }, { Param([string]$value) $this.SetDirectory($value) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$f'"), { param([string]$value) $this.set_fullName($value) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Directory', { return [DirectoryInfo](Split-Path $this.FullName -ea Ignore) }, { param([string]$value) $this.SetDirectory($value) }))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('BaseName', { return [IO.Path]::GetFileNameWithoutExtension($this.FullName) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { Param([string]$value) $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value), $false) }))
-    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Extension', { return [IO.Path]::GetExtension($this.FullName) }, { Param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $e = $value.StartsWith(".") ? $value : ".$value"; $this.Rename(('{0}{1}' -f $this.BaseName, $e), $false) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Name', { return [IO.Path]::GetFileName($this.FullName) }, { param([string]$value) $this.Rename(([string]::IsNullOrWhiteSpace([IO.Path]::GetExtension($value)) ? "$value.json" : $value), $false) }))
+    $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Extension', { return [IO.Path]::GetExtension($this.FullName) }, { param([string]$value) [ValidateNotNullOrWhiteSpace()][string]$value = $value; $e = $value.StartsWith(".") ? $value : ".$value"; $this.Rename(('{0}{1}' -f $this.BaseName, $e), $false) }))
     $o.Value.PsObject.Properties.Add([PSScriptProperty]::new('Exists', { return [IO.File]::Exists($this.FullName) })); $o.Value.SetSuffix($suffix);
     return $o.Value
   }
@@ -130,7 +130,7 @@ class ConfigFile : MarshalByRefObject {
     if (![IO.Path]::IsPathFullyQualified($_fdir)) {
       throw [System.ArgumentException]::new("Please provide a valid directory path")
     }
-    ($_fdir -ne "$($this.Directory)" -and $this.Exists) ? $this.MoveTo($_fdir) : $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$([IO.Path]::Combine($_fdir, $this.Name))'"), { Param([string]$value) $this.set_fullName($value) }))
+    ($_fdir -ne "$($this.Directory)" -and $this.Exists) ? $this.MoveTo($_fdir) : $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$([IO.Path]::Combine($_fdir, $this.Name))'"), { param([string]$value) $this.set_fullName($value) }))
   }
   [void] Rename([string]$nn) { $this.Rename($nn, $false) }
   [void] Rename([string]$nn, [bool]$savefile) {
@@ -180,7 +180,7 @@ class ConfigFile : MarshalByRefObject {
   hidden [void] set_fullName([string]$value) {
     $nf = ''; [ValidateNotNullOrWhiteSpace()][string]$nf = [PsModuleBase]::GetUnResolvedPath($value)
     $this.SetDirectory((Split-Path $nf -ea Stop));
-    $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$nf'"), { Param([string]$value) $this.set_fullName($value) }))
+    $this.PsObject.Properties.Add([PSScriptProperty]::new('FullName', [scriptblock]::Create("return '$nf'"), { param([string]$value) $this.set_fullName($value) }))
   }
   [string] ReadAllText() {
     return [IO.File]::ReadAllText($this.FullName)
@@ -624,7 +624,7 @@ class PsModuleBase {
   static [IO.DirectoryInfo] GetDataPath([string]$appName, [string]$SubdirName) {
     $_Host_OS = [PsModuleBase]::GetHostOs()
     $dataPath = if ($_Host_OS -eq 'Windows') {
-      [DirectoryInfo]::new([IO.Path]::Combine($Env:HOME, "AppData", "Roaming", $appName, $SubdirName))
+      [DirectoryInfo]::new([IO.Path]::Combine((Get-Variable -ValueOnly HOME), "AppData", "Roaming", $appName, $SubdirName))
     } elseif ($_Host_OS -in ('Linux', 'MacOSX')) {
       [DirectoryInfo]::new([IO.Path]::Combine((($env:PSModulePath -split [IO.Path]::PathSeparator)[0] | Split-Path | Split-Path), $appName, $SubdirName))
     } elseif ($_Host_OS -eq 'Unknown') {
@@ -842,7 +842,7 @@ class PsModuleBase {
         $newConfig.CertSubject = $InputStr
         break
       }
-      Default {
+      default {
         throw [System.ArgumentException]::new("Must specify one of Thumbprint, FriendlyName, or Subject.")
       }
     }
@@ -1361,7 +1361,7 @@ class PsModuleBase {
     if ($SearchOptions.SkipDefaults) {
       try {
         $DefaultTypeProps = @( $Object.GetType().GetProperties() | Select-Object -ExpandProperty Name -ErrorAction Stop )
-      } Catch {
+      } catch {
         $null
       }
     }
@@ -1442,12 +1442,12 @@ class PsModuleBase {
     return [PsModuleBase]::FindHashKeyValue($PropertyName, $Ast, @())
   }
   static [hashtable[]] FindHashKeyValue($PropertyName, $Ast, [string[]]$CurrentPath) {
-    if ($PropertyName -eq ($CurrentPath -Join '.') -or $PropertyName -eq $CurrentPath[ - 1]) {
+    if ($PropertyName -eq ($CurrentPath -join '.') -or $PropertyName -eq $CurrentPath[ - 1]) {
       return $Ast | Add-Member NoteProperty HashKeyPath ($CurrentPath -join '.') -PassThru -Force | Add-Member NoteProperty HashKeyName ($CurrentPath[ - 1]) -PassThru -Force
     }; $r = @()
     if ($Ast.PipelineElements.Expression -is [System.Management.Automation.Language.HashtableAst]) {
       $KeyValue = $Ast.PipelineElements.Expression
-      ForEach ($KV in $KeyValue.KeyValuePairs) {
+      foreach ($KV in $KeyValue.KeyValuePairs) {
         $result = [PsModuleBase]::FindHashKeyValue($PropertyName, $KV.Item2, @($CurrentPath + $KV.Item1.Value))
         if ($null -ne $result) {
           $r += $result
@@ -1537,7 +1537,7 @@ class PsModuleBase {
       "Windows" { (New-Object Security.Principal.WindowsPrincipal $([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator); break }
       "Linux" { (& id -u) -eq 0; break }
       "MacOSX" { Write-Warning "MacOSX !! idk how to solve this one!"; $false; break }
-      Default {
+      default {
         Write-Warning "[ModuleManager]::IsAdmin? : OSPlatform $((Get-Variable 'PSVersionTable' -ValueOnly).Platform) | $HostOs is not yet supported"
         throw "UNSUPPORTED_OS"
       }
@@ -1557,7 +1557,7 @@ class PsModuleBase {
     $info = $null; $gist = "https://api.github.com/gists/d1985ebe22fe07cc191c9458b3a2bdbc"
     try {
       $info = [scriptblock]::Create($(
-        (Invoke-RestMethod -Verbose:$false -ea Ignore -SkipHttpErrorCheck -Method Get $gist).files.'IpInfo.ps1'.content
+          (Invoke-RestMethod -Verbose:$false -ea Ignore -SkipHttpErrorCheck -Method Get $gist).files.'IpInfo.ps1'.content
         ) + ';[Ipinfo]::getInfo()'
       ).Invoke()
     } catch {
@@ -1578,7 +1578,7 @@ class PsModuleBase {
         $([RuntimeInformation]::IsOSPlatform([OSPlatform]::FreeBSD)) { "FreeBSD"; break }
         $([RuntimeInformation]::IsOSPlatform([OSPlatform]::Linux)) { "Linux"; break }
         $([RuntimeInformation]::IsOSPlatform([OSPlatform]::OSX)) { "MacOSX"; break }
-        Default {
+        default {
           "UNKNOWN"
         }
       }
@@ -1620,10 +1620,10 @@ $scripts += Get-ChildItem "$PSScriptRoot/Private" -Filter "*.ps1" -Recurse -Erro
 $scripts += $Public
 
 foreach ($file in $scripts) {
-  Try {
+  try {
     if ([string]::IsNullOrWhiteSpace($file.fullname)) { continue }
     . "$($file.fullname)"
-  } Catch {
+  } catch {
     Write-Warning "Failed to import function $($file.BaseName): $_"
     $host.UI.WriteErrorLine($_)
   }

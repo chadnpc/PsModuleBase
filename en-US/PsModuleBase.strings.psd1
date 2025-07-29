@@ -1,10 +1,10 @@
 ﻿
 @{
   ModuleName          = 'PsModuleBase'
-  ModuleVersion       = '0.1.3'
+  ModuleVersion       = '0.1.4'
   ReleaseNotes        = '# Release Notes
 
-- Version_0.1.3
+- Version_0.1.4
 - Functions ...
 - New classes
 '
