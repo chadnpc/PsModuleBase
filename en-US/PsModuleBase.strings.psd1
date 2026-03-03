@@ -1,12 +1,11 @@
 ﻿
 @{
   ModuleName          = 'PsModuleBase'
-  ModuleVersion       = '0.1.4'
+  ModuleVersion       = '0.1.5'
   ReleaseNotes        = '# Release Notes
 
-- Version_0.1.4
-- Functions ...
-- New classes
+- Version_0.1.5
+- Exported new classes
 '
   DefaultModuleSchema = @{
     Files   = @{

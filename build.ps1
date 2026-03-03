@@ -1,7 +1,7 @@
 ﻿
 #!/usr/bin/env pwsh
 # .SYNOPSIS
-#   PsModuleBase buildScript v0.1.4
+#   PsModuleBase buildScript v0.1.5
 # .DESCRIPTION
 #   A custom build script for the module PsModuleBase
 # .LINK

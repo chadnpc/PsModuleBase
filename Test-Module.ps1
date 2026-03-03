@@ -1,10 +1,10 @@
 ﻿
 #!/usr/bin/env pwsh
 # .SYNOPSIS
-#   PsModuleBase testScript v0.1.4
+#   PsModuleBase testScript v0.1.5
 # .EXAMPLE
-#   ./Test-Module.ps1 -version 0.1.4
-#   Will test the module in ./BuildOutput/PsModuleBase/0.1.4/
+#   ./Test-Module.ps1 -version 0.1.5
+#   Will test the module in ./BuildOutput/PsModuleBase/0.1.5/
 # .EXAMPLE
 #   ./Test-Module.ps1
 #   Will test the latest  module version in ./BuildOutput/PsModuleBase/
@@ -81,11 +81,7 @@ process {
   if (!$skipBuildOutputTest.IsPresent) {
     Test-ModuleManifest -Path $manifestFile.FullName -ErrorAction Stop -Verbose
   }
-  $PesterConfig = New-PesterConfiguration
-  $PesterConfig.TestResult.OutputFormat = "NUnitXml"
-  $PesterConfig.TestResult.OutputPath = [IO.Path]::Combine("$TestsPath", "results.xml")
-  $PesterConfig.TestResult.Enabled = $True
-  $TestResults = Invoke-Pester -Configuration $PesterConfig
+  $TestResults = Invoke-Pester -OutputFormat NUnitXml -OutputPath ([IO.Path]::Combine("$TestsPath", "results.xml")) -PassThru
 }
 
 end {

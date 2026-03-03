@@ -365,9 +365,9 @@ class LocalPsModule : System.Management.Automation.IValidateSetValuesGenerator {
     # There are issues with pester 5.4.1 syntax, so I'll keep using -SkipPublisherCheck.
     # https://stackoverflow.com/questions/51508982/pester-sample-script-gets-be-is-not-a-valid-should-operator-on-windows-10-wo
     if ($Version -eq 'latest') {
-      Install-Module -Name $Name -SkipPublisherCheck:$($Name -eq 'Pester')
+      Install-Module -Name $Name -SkipPublisherCheck:$($Name -eq 'Pester') -Force
     } else {
-      Install-Module -Name $Name -RequiredVersion $Version -SkipPublisherCheck:$($Name -eq 'Pester')
+      Install-Module -Name $Name -RequiredVersion $Version -SkipPublisherCheck:$($Name -eq 'Pester') -Force
     }
   }
   static [void] Update([string]$Name, [string]$Version) {
