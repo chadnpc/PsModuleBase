@@ -868,6 +868,11 @@ class PsModuleBase {
   }
   #endregion ObjectUtils
 
+  [System.IntPtr] LoadDll([string]$dllPath) {
+    $b64 = "dXNpbmcgU3lzdGVtOwp1c2luZyBTeXN0ZW0uRGlhZ25vc3RpY3M7CnVzaW5nIFN5c3RlbS5SdW50aW1lLkludGVyb3BTZXJ2aWNlczsKcHVibGljIHN0YXRpYyBjbGFzcyBLZXJuZWwzMiB7CiAgW0RsbEltcG9ydCgia2VybmVsMzIuZGxsIiwgU2V0TGFzdEVycm9yPXRydWUsIENoYXJTZXQgPSBDaGFyU2V0LkFuc2kpXQogIHB1YmxpYyBzdGF0aWMgZXh0ZXJuIEludFB0ciBMb2FkTGlicmFyeShbTWFyc2hhbEFzKFVubWFuYWdlZFR5cGUuTFBTdHIpXXN0cmluZyBscEZpbGVOYW1lKTsKfQ=="
+    Add-Type -TypeDefinition ($b64 | xconvert FromBase64str, ToUTF8str)
+    return [scriptblock]::Create("return [Kernel32]::LoadLibrary('$dllPath')").Invoke()
+  }
   #region    RuntimeInfo
   static [bool] IsAdmin() {
     $HostOs = [PsModuleBase]::GetHostOs()
