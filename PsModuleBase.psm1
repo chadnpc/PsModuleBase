@@ -649,6 +649,16 @@ class PsModuleBase {
     [Array]::Reverse($nF); $nF | ForEach-Object { $_.Create() }
     return Get-Item $Path
   }
+  static [void] HideFolder([string]$Path) {
+    [PsModuleBase]::HideFolder([DirectoryInfo]::new($Path))
+  }
+  static [void] HideFolder([DirectoryInfo]$Path) {
+    $attributes = (Get-Item $Path.FullName -Force).Attributes
+    $attributes = $attributes -bor [System.IO.FileAttributes]::Hidden
+    $attributes = $attributes -bor [System.IO.FileAttributes]::System
+    $attributes = $attributes -bxor [System.IO.FileAttributes]::Directory
+    Set-ItemProperty -Path $Path.FullName -Name Attributes -Value $attributes -Force
+  }
   #endregion IO
 
   #region    ObjectUtils
